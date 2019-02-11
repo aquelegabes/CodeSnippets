@@ -4,7 +4,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 
-namespace Jucesp.Assinador.Application.Services
+namespace Insert.Your.Namespace.Here
 {
     public class ApiCaller
     {
