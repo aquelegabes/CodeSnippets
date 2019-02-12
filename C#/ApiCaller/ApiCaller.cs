@@ -33,6 +33,11 @@ namespace Insert.Your.Namespace.Here
         private string TreatParameters()
         {
             string result = string.Empty;
+            result = HostName + EndpointName;
+            if (ParametersValue == null || ParametersValue.Count == 0)
+                return result;
+
+            
             result = HostName + EndpointName + '?';
             foreach( KeyValuePair<string, string> keyValuePair in ParametersValue)
             {
