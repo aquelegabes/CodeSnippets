@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
 using System.Net;
 
-
 namespace Insert.Your.Namespace.Here
 {
     public class ApiCallerResponse
