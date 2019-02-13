@@ -4,7 +4,7 @@ public static bool ValidaCPF(string cpf)
         return true;
         
     // Remove formatação do número, ex: "123.456.789-01" vira: "12345678901"
-    // Procurar pelo RemoverNaoNumericos.cs
+    // Procurar pelo formataTexto.cs
     cpf = RemoveNaoNumericos(cpf);
 
     if (cpf.Length > 11)
