@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Linq;
 
 namespace Insert.Your.Namespace.Here
 {
@@ -22,7 +23,7 @@ namespace Insert.Your.Namespace.Here
         /// <param name="Endpointname">Um endpoint válido</param>
         /// <param name="Hostname">Um endereço host válido</param>
         /// <param name="ParamValue">Dicionário apontando os nomes dos parametros e seus respectivos valores</param>
-        public ApiCaller(string Hostname, string Endpointname, IDictionary<string, string> ParamValue = null)
+        public ApiCaller(string Hostname, string Endpointname = "", IDictionary<string, string> ParamValue = null)
         {
             ParametersValue = ParamValue;
             EndpointName = Endpointname;
@@ -37,11 +38,15 @@ namespace Insert.Your.Namespace.Here
             if (ParametersValue == null || ParametersValue.Count == 0)
                 return result;
 
-            
+            var lastKey= ParametersValue.Keys.Last();
+
             result = HostName + EndpointName + '?';
             foreach( KeyValuePair<string, string> keyValuePair in ParametersValue)
             {
-                result += keyValuePair.Key + "=" + keyValuePair.Value;
+                if (keyValuePair.Key == lastKey)
+                    result += keyValuePair.Key + "=" + keyValuePair.Value;
+                else
+                    result += keyValuePair.Key + "=" + keyValuePair.Value + '&';
             }
             return result;
         }
@@ -60,19 +65,19 @@ namespace Insert.Your.Namespace.Here
         /// <summary>
         /// Cria uma HttpWebRequest do Tipo POST para a Url declarada na hora da instância
         /// </summary>
-        /// <param name="body">Corpo da requisição (default Json)</param>
+        /// <param name="Body">Corpo da requisição - (nonQuery request)</param>
         /// <param name="headers">Lista de cabeçalhos a serem inclusos na requisição - Opcional</param>
         /// <param name="timeout">Tempo de timeout da requisição - Opcional</param>
         /// <returns>Retorna classe ApiCallerResponse com Status, Mensagem e um objeto serializado JSON</returns>
-        public ApiCallerResponse Post(string body = null, ApiCallerHeader[] headers = null, int? timeout = null)
+        public ApiCallerResponse Post(string Body = "", ApiCallerHeader[] headers = null, int? timeout = null)
         {
-            return _Call(body, "POST", headers, timeout, "application/json");
+            return _Call(Body, "POST", headers, timeout, "application/json");
         }
 
         /// <summary>
         /// Cria uma HttpWebRequest com os parametros informados
         /// </summary>
-        /// <param name="Body">Corpo da requisição - default Json</param>
+        /// <param name="Body">Corpo da requisição - (nonQuery request)</param>
         /// <param name="TipoRequest">Tipo de requisição - Opcional (default: GET)</param>
         /// <param name="headers">Lista de cabeçalhos a serem inclusos na requisição - Opcional</param>
         /// <param name="timeout">Tempo de timeout da requisição - Opcional</param>
@@ -87,7 +92,7 @@ namespace Insert.Your.Namespace.Here
         /// <summary>
         /// Executa um WebRequest com os parametros informados.
         /// </summary>
-        /// <param name="Body">Corpo da requisição - default Json</param>
+        /// <param name="Body">Corpo da requisição - (nonQuery request)</param>
         /// <param name="TipoRequest">Tipo de requisição - Opcional (default: GET)</param>
         /// <param name="headers">Lista de cabeçalhos a serem inclusos na requisição - Opcional</param>
         /// <param name="timeout">Tempo de timeout da requisição - Opcional</param>
@@ -162,12 +167,12 @@ namespace Insert.Your.Namespace.Here
         /// </summary>
         /// <param name="path">Caminho do request (incluindo seus parametros)</param>
         /// <param name="TipoRequest">Tipo de requisição - Opcional (default: GET)</param>
-        /// <param name="Body">Corpo da requisição - default Json</param>
+        /// <param name="Body">Corpo da requisição - (nonQuery request)</param>
         /// <param name="headers">Lista de cabeçalhos a serem inclusos na requisição - Opcional</param>
         /// <param name="timeout">Tempo de timeout da requisição - Opcional</param>
         /// <param name="contentType">ContentType da requisição - Opcional (default: application/json)</param>
         /// <returns>Retorna classe ApiCallerResponse com Status, Mensagem e um objeto serializado JSON</returns>
-        public static ApiCallerResponse CallCustomPath(string path = "", string Body = "", string TipoRequest = "GET", ApiCallerHeader[] headers = null,
+        public static ApiCallerResponse CustomRequest(string path = "", string Body = "", string TipoRequest = "GET", ApiCallerHeader[] headers = null,
       int? timeout = null, string contentType = "application/json")
         {
             HttpWebRequest httpWebRequest = WebRequest.Create(path) as HttpWebRequest;
