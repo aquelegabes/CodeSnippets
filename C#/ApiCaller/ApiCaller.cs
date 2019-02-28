@@ -10,15 +10,39 @@ namespace Insert.Your.Namespace.Here
     public class ApiCaller
     {
         private string _treatedEndpoint;
+        private string _parametersString;
         public IDictionary<string, string> ParametersValue { get; }
         public string HostName { get; set; }
         public string EndpointName { get; set; }
         public string CompleteRequestPath { get { return _treatedEndpoint; } }
-        public string TreatedParameters { get { return TreatParameters(); } }
+        public string TreatedParameters
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(_parametersString))
+                    return TreatParameters();
+                else
+                    return _parametersString;
+            }
+        }
         public ApiCallerHeader[] Header { get; set; }
 
         /// <summary>
-        /// Construtor que indica o endpoint no qual deseja conectar-se e as propriedades da sua entidade
+        /// Construtor que indica o endpoint no qual deseja conectar-se e os parametros como string
+        /// </summary>
+        /// <param name="Endpointname">Um endpoint válido</param>
+        /// <param name="Hostname">Um endereço host válido</param>
+        /// <param name="Parameters">String com os parâmetros</param>
+        public ApiCaller(string Hostname, string Endpointname, string Parameters)
+        {
+            HostName = Hostname;
+            EndpointName = Endpointname;
+            _parametersString = Parameters;
+            _treatedEndpoint = HostName + EndpointName + _parametersString;
+        }
+
+        /// <summary>
+        /// Construtor que indica o endpoint no qual deseja conectar-se e os parametros como um Dictionary KeyValuePair
         /// </summary>
         /// <param name="Endpointname">Um endpoint válido</param>
         /// <param name="Hostname">Um endereço host válido</param>
@@ -167,12 +191,12 @@ namespace Insert.Your.Namespace.Here
         /// </summary>
         /// <param name="path">Caminho do request (incluindo seus parametros)</param>
         /// <param name="TipoRequest">Tipo de requisição - Opcional (default: GET)</param>
-        /// <param name="Body">Corpo da requisição - (nonQuery request)</param>
+        /// <param name="Body">Corpo da requisição - Opcional (nonQuery request)</param>
         /// <param name="headers">Lista de cabeçalhos a serem inclusos na requisição - Opcional</param>
         /// <param name="timeout">Tempo de timeout da requisição - Opcional</param>
         /// <param name="contentType">ContentType da requisição - Opcional (default: application/json)</param>
         /// <returns>Retorna classe ApiCallerResponse com Status, Mensagem e um objeto serializado JSON</returns>
-        public static ApiCallerResponse CustomRequest(string path = "", string Body = "", string TipoRequest = "GET", ApiCallerHeader[] headers = null,
+        public static ApiCallerResponse CustomRequest(string path, string Body = "", string TipoRequest = "GET", ApiCallerHeader[] headers = null,
       int? timeout = null, string contentType = "application/json")
         {
             HttpWebRequest httpWebRequest = WebRequest.Create(path) as HttpWebRequest;
@@ -235,5 +259,4 @@ namespace Insert.Your.Namespace.Here
 
             return apiHelperResponse;
         }
-    }
-}
+    }}
