@@ -1,5 +1,6 @@
 // necessário JQuery
 // função que remove um inline-style de um elemento
+// credits: https://stackoverflow.com/questions/19917026/bootstrap-modal-z-index
 
 (function ($) {
     $.fn.removeStyle = function (style) {
