@@ -120,10 +120,9 @@ namespace Namespace.Here
                         Font f = new Font(Font.FontFamily.TIMES_ROMAN, 8);
 
                         string[] dados = certificate.GetNameInfo(X509NameType.SimpleName, false).Split(':');
-                        string codAut = $"{DateTime.Now.ToString("yyMMddssff")}-{dados[1].Substring(dados[1].Length - 4, 4)}";
 
-                        Phrase pAssinado = new Phrase($@"Este documento foi assinado digitalmente por: {dados[0]}, para validar este documento acesse http://vre.jucesp.sp.gov.br e informe", f);
-                        Phrase pCodigAut = new Phrase($@" o código de autenticidade: Nº{codAut} - {DateTime.Now.ToLongDateString()}", f);
+                        Phrase pAssinado = new Phrase($@"Este documento foi assinado digitalmente por: {dados[0]}", f);
+						
                         // Imagem marca d'água
                         //Image img = dadosAssinatura.Imagem;
                         float w = 200F;
