@@ -13,6 +13,10 @@ def read_files(path):
 
 def rule_of_three(mult1, mult2, div):
 	"""
+		x	=	mult1
+		-----		-----
+		mult2		div
+	
 		Solves rule of three
 		mult1 = first number to multiply
 		mult2 = second number to multiply
