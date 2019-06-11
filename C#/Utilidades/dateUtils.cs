@@ -1,7 +1,7 @@
 public static class DateTimeExtensions 
 {
     // Get weekends days in date
-    public static int GetWeekendsDaysInDate(this DateTime value)
+    public static int GetWeekendsDays(this DateTime value)
     {
         int result = 0;
         startDate = new DateTime(startDate.Year, startDate.Month, 1);
