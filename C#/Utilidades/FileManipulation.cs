@@ -22,28 +22,31 @@ public static class FileManipulation
 	}
 
 	public static bool SaveFile(byte[] file, string targetPath, string name, bool overwriteFile = false)
-	{
-		if (string.IsNullOrWhiteSpace(name))
-			throw new NullReferenceException("File name is required");
-		if (string.IsNullOrWhiteSpace(targetPath))
-			throw new NullReferenceException("Target path is required");
-		if (file == null || file.Length == 0)
-			throw new NullReferenceException("File is required");
-			
-		try
-		{
-			string fullPath = $@"{targetPath}\{name}";
-			if (!Directory.Exists(targetPath))
-				Directory.CreateDirectory(targetPath);
-			if (File.Exists(fullPath) && overwriteFile)                    
-				File.WriteAllBytes(fullPath, file);
-			else
-				return false
-			return true;
-		}
-		catch (Exception ex)
-		{
-			return false;
-		}
-	}
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new NullReferenceException("File name is required");
+            if (string.IsNullOrWhiteSpace(targetPath))
+                throw new NullReferenceException("Target path is required");
+            if (file == null || file.Length == 0)
+                throw new NullReferenceException("File is required");
+
+            try
+            {
+                string fullPath = $@"{targetPath}\{name}";
+                if (!Directory.Exists(targetPath))
+                    Directory.CreateDirectory(targetPath);
+                if (!File.Exists(fullPath))
+                    File.WriteAllBytes(fullPath, file);
+                else if (overwriteFile)
+                    File.WriteAllBytes(fullPath, file);
+                else
+                    return false;
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
 }
