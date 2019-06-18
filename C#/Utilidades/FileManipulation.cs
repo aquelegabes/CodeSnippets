@@ -49,4 +49,24 @@ public static class FileManipulation
                 return false;
             }
         }
+	
+	public static bool DeleteFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new NullReferenceException("File path is required");
+
+            var attr = File.GetAttributes(filePath);
+            if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
+                throw new ArgumentException("Must be a file not a directory", nameof(filePath));
+
+            try
+            {
+                File.Delete(filePath);
+                return true;
+            }
+            catch (Exception exe)
+            {
+                throw;
+            }
+        }
 }
