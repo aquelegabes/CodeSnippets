@@ -8,13 +8,19 @@
 /// </example>
 public static byte[] ToByteArray(this string str, Encoding encoding)
 {
+    if (string.IsNullOrWhiteSpace(str))
+        throw new ArgumentNullException(nameof(str), "In order to encode value can not be null");
     try
     {
         return encoding.GetBytes(str);
-    }catch (Exception ex)
+    }
+    catch (EncoderFallbackException ex)
     {
-        return default(byte[]);
-        //throw;
+        throw new Exception("Wasn't possible to encode specified value, see inner exception for details", ex);
+    }
+    catch (Exception ex)
+    {
+        throw;
     }
 }
 
