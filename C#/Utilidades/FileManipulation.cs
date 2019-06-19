@@ -1,3 +1,4 @@
+using System.IO;
 public static class FileManipulation
 {
 	public static bool OpenFile(string path, out byte[] file)
@@ -16,8 +17,7 @@ public static class FileManipulation
 		}
 		catch (Exception ex)
 		{
-			file = default(byte[]);
-			return false;
+			throw new System.IO.FileLoadException("Couldn't open file see inner exception for details", ex)
 		}
 	}
 
@@ -46,7 +46,7 @@ public static class FileManipulation
             }
             catch (Exception ex)
             {
-                return false;
+                throw new System.IO.IOException("Couldn't save the file check inner exception for details", ex);
             }
         }
 	
@@ -66,7 +66,7 @@ public static class FileManipulation
             }
             catch (Exception exe)
             {
-                throw;
+                throw new System.IO.IOException("Couldn't delete the file check inner exception for details", ex);
             }
         }
 }
