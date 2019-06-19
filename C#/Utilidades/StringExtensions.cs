@@ -6,10 +6,14 @@
 /// <example>
 /// <c>foo.ToByteArray(Encoding.UTF8);</c>
 /// </example>
+/// <exception cref="ArgumentNullException"></exception>
+/// <exception cref="EncoderFallbackException"></exception>
 public static byte[] ToByteArray(this string str, Encoding encoding)
 {
     if (string.IsNullOrWhiteSpace(str))
         throw new ArgumentNullException(nameof(str), "In order to encode value can not be null");
+    if (encoding == null)
+        throw new ArgumentNullException(nameof(encoding), "Encoding can not be null");
     try
     {
         return encoding.GetBytes(str);
