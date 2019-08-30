@@ -1,4 +1,40 @@
 /// <summary>
+/// Splits a string into a maximum number of substrings based on the characters in the bool expression. 
+/// </summary>
+/// <param name="value">String value</param>
+/// <param name="expression">Expression to when split string</param>
+/// <param name="count">The maximum number of substrings to return. Default value is <see cref="Int32.MaxValue"/></param>
+/// <param name="options"><see cref="StringSplitOptions.RemoveEmptyEntries"/> to omit empty array elements from the array returned; or None to include empty array elements in the array returned. Default value is <see cref="StringSplitOptions.None"/></param>
+/// <returns cref="String[]">An array whose elements contain the substrings in this string that are delimited by one or more characters in separator.</returns>
+/// <exception cref="ArgumentNullException">Any of the parameters are <see cref="null"/>.</exception>
+/// <exception cref="ArgumentOutOfRangeException">Count is negative.</exception>
+/// <exception cref="ArgumentException">options is not one of the <see cref="StringSplitOptions"/> values.</exception>
+public static string[] Split(this string value, Func<char, bool> expression, Int32 count = Int32.MaxValue, StringSplitOptions options = StringSplitOptions.None)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        throw new ArgumentNullException("Base string value cannot be null or white spaced.");
+
+    if (expression is null)
+        throw new ArgumentNullException("Expression cannot be null");
+
+    var split = value.Where(expression).ToArray();
+
+    try 
+    {
+        var result = value.Split(split, count, options);
+        return result;
+    }
+    catch (ArgumentOutOfRangeException)
+    {
+        throw;
+    }
+    catch (ArgumentException)
+    {
+        throw;
+    }
+}
+
+/// <summary>
 /// Returns a byte[] string encoded with a chosen charset
 /// </summary>
 /// <param name="str"></param>
