@@ -85,3 +85,12 @@ public static string RemoveAccents(this string value)
 {
     return new string(value.Normalize(NormalizationForm.FormD).Where(ch => char.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark).ToArray());
 }
+
+/// <summary>
+/// Return the string reversed
+/// <param name="value"></param>
+/// <returns></returns>
+public static string Reverse(this string val)
+{
+    return new string(val.Reverse().ToArray());
+}
