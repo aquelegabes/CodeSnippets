@@ -12,7 +12,7 @@ namespace Insert.Your.Namespace.Here
         /// </summary>
         /// <typeparam name="T">Entity</typeparam>
         /// <returns>Entity</returns>
-        public dynamic DeserializedObject<T>()
+        public T DeserializedObject<T>()
         {
             try
             {
