@@ -1,16 +1,42 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace Namespace
 {
     /// <summary>
+    /// List result containing next page and a collection of <see cref="FileInfoResult"/>.
+    /// </summary>
+    public sealed class ListFileInfoResult
+    {
+        public object NextPageObject { get; set; }
+        public ICollection<FileInfoResult> Files { get; set; } = new List<FileInfoResult>();
+    }
+
+    /// <summary>
+    /// Basic file info.
+    /// </summary>
+    public sealed class FileInfoResult
+    {
+        public string Id { get; set; }
+        public string MimeType { get; set; }
+        public string Name { get; set; }
+        public DateTimeOffset? CreatedTime { get; set; }
+        public long Size { get; set; }
+        public object Additional { get; set; }
+    }
+    /// <summary>
     /// Structured FTP settings information.
     /// </summary>
-    public struct FTPSettings
+    /// <summary>
+    /// Structured FTP settings information.
+    /// </summary>
+    public class FtpSettings
     {
         public string Url { get; set; }
         public string User { get; set; }
@@ -26,36 +52,154 @@ namespace Namespace
     /// <summary>
     /// Class responsible for handling FTP methods.
     /// </summary>
-    public class FTPHandler
+    public class FtpHandler : IFileHandler
     {
-        private FTPSettings _settings;
-        private readonly NetworkCredential _credentials;
+        private FtpSettings _settings;
+        private NetworkCredential _credentials;
 
-        /// <summary>
-        /// Constructor that manages configuring the handler using a <see cref="FTPSettings"/>.
-        /// </summary>
-        /// <param name="settings">Valid settings.</param>
-        /// <exception cref="MissingFieldException"><see cref="FTPSettings.Url"/> is missing.</exception>
-        public FTPHandler(FTPSettings settings)
+        /// <inheritdoc />
+        public async Task<bool> CanConnect()
         {
-            if (string.IsNullOrWhiteSpace(settings.Url))
-                throw new MissingFieldException(message: $"{nameof(settings.Url)} must not be missing.");
+            var uri = new Uri(_settings.Url);
+            var request = (FtpWebRequest)WebRequest.Create(uri);
+            request.KeepAlive = false;
+            request.Method = WebRequestMethods.Ftp.PrintWorkingDirectory;
 
-            _settings = settings;
+            if (_settings.IsCredentialsAvailable)
+                request.Credentials = _credentials;
+
+            try
+            {
+                using (var response = await request.GetResponseAsync())
+                    return true;
+            }
+            catch { return false; }
+            finally { request.Abort(); }
+        }
+
+        /// <inheritdoc />
+        /// <remarks><typeparamref name="T"/> is expected to be <see cref="FtpSettings"/></remarks>
+        /// <exception cref="InvalidCastException">Settings is not a valid type.</exception>
+        /// <exception cref="MissingFieldException"><see cref="FtpSettings.Url"/> is missing.</exception>
+        public void LoadSettings<T>(T settings)
+        {
+            if (!(settings is FtpSettings))
+                throw new InvalidCastException(message: "Invalid settings.");
+
+            FtpSettings ftpSettings = settings as FtpSettings;
+
+            if (string.IsNullOrWhiteSpace(ftpSettings.Url))
+                throw new MissingFieldException(message: $"{nameof(ftpSettings.Url)} must not be null.");
+
+            _settings = ftpSettings;
             _credentials = new NetworkCredential(_settings.User, _settings.Password);
         }
 
+        /// <inheritdoc />
+        /// <remarks>The param <paramref name="fileId"/> is not used on FTP.</remarks>
+        /// <param name="fileId">Not used on FTP.</param>
+        /// <param name="fileName">The file name to look up.</param>
+        /// <param name="relativePath">Path relative to the <see cref="FtpSettings.Url"/>.</param>
+        /// <exception cref="WebException">Fail when connecting to the ftp server.</exception>
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
+        public async Task<FileInfoResult> FileLookupAsync(
+            string fileId = "", string fileName = "",
+            string relativePath = "")
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentNullException(paramName: nameof(fileName), message: "File name must be specified.");
+
+            if (!await PathExistsAsync(fileName))
+                throw new FileNotFoundException("File not found.");
+
+            var uri = new Uri(_settings.Url);
+
+            if (string.IsNullOrWhiteSpace(relativePath))
+                uri = new Uri(uri, Path.Join(relativePath, fileName));
+            else
+                uri = new Uri(uri, fileName);
+
+            try
+            {
+                var fileSize = await FileSize(uri);
+                var fileCreatedAt = await FileTimeStamp(uri);
+
+                string contentType = "application/octet-stream";
+                new FileExtensionContentTypeProvider().TryGetContentType(fileName, out contentType);
+
+                return new FileInfoResult
+                {
+                    Name = fileName,
+                    CreatedTime = fileCreatedAt,
+                    Size = fileSize,
+                    MimeType = contentType
+                };
+            }
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
+            }
+            catch (Exception e)
+            {
+                throw new WebException("Fail when connecting to the ftp server.", e);
+            }
+        }
+
+        private async Task<DateTime> FileTimeStamp(Uri uri)
+        {
+            var req = (FtpWebRequest)WebRequest.Create(uri);
+            if (_settings.IsCredentialsAvailable)
+                req.Credentials = _credentials;
+            req.Method = WebRequestMethods.Ftp.GetDateTimestamp;
+            try
+            {
+                using (var response = (FtpWebResponse)await req.GetResponseAsync())
+                {
+                    return response.LastModified;
+                }
+            }
+            finally
+            {
+                req.Abort();
+            }
+        }
+
+        private async Task<long> FileSize(Uri uri)
+        {
+            var req = (FtpWebRequest)WebRequest.Create(uri);
+            if (_settings.IsCredentialsAvailable)
+                req.Credentials = _credentials;
+            req.Method = WebRequestMethods.Ftp.GetFileSize;
+            try
+            {
+                using (var response = await req.GetResponseAsync())
+                {
+                    return response.ContentLength;
+                }
+            }
+            finally
+            {
+                req.Abort();
+            }
+        }
+
         /// <summary>
-        /// List all directories/files from a <see cref="FTPSettings.Url"/> in a <paramref name="relativeDirectory"/>.
+        /// List all directories/files from a <see cref="FtpSettings.Url"/> in a <paramref name="relativeDirectory"/>.
         /// </summary>
         /// <remarks>
-        /// <para><paramref name="relativeDirectory"/> is optional, if is not specified lists in the root <see cref="FTPSettings.Url"/>.</para>
-        /// <para><paramref name="relativeDirectory"/> can also be specified in <see cref="FTPSettings.Url"/>.</para>
+        /// <para><paramref name="relativeDirectory"/> is optional, if is not specified lists in the root <see cref="FtpSettings.Url"/>.</para>
+        /// <para><paramref name="relativeDirectory"/> can also be specified in <see cref="FtpSettings.Url"/>.</para>
         /// </remarks>
         /// <param name="relativeDirectory">Optional: relative directory path.</param>
+        /// <param name="pageSize">Not used.</param>
+        /// <param name="pageObject">Not used.</param>
         /// <returns>A <see cref="System.Collections.IEnumerable"/> of string listing all directories and files.</returns>
         /// <exception cref="WebException">Fail when connecting to the ftp server.</exception>
-        public async Task<IEnumerable<string>> ListDirectoriesAsync(string relativeDirectory = "")
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
+        public async Task<ListFileInfoResult> ListAsync(
+        string relativeDirectory = "",
+        int pageSize = 100, object pageObject = default)
         {
             var uri = new Uri(_settings.Url);
             if (!string.IsNullOrWhiteSpace(relativeDirectory))
@@ -68,20 +212,85 @@ namespace Namespace
                 if (_settings.IsCredentialsAvailable)
                     request.Credentials = _credentials;
 
-                var response = (FtpWebResponse)await request.GetResponseAsync();
-
+                using (var response = (FtpWebResponse)await request.GetResponseAsync())
                 using (var responseStream = response.GetResponseStream())
                 {
                     using (var reader = new StreamReader(responseStream))
                     {
-                        var directories = new List<string>();
+                        var filesList = new ListFileInfoResult();
                         while (reader?.EndOfStream == false)
                         {
-                            directories.Add(reader.ReadLine());
+                            var filesInfo = new FileInfoResult
+                            {
+                                Additional = reader.ReadLine(),
+                            };
+                            var name = ((string)filesInfo.Additional).Split(" ").Last();
+                            if (name == "." || name == "..")
+                                continue;
+                            filesInfo.Name = name;
+                            filesList.Files.Add(filesInfo);
                         }
-                        return directories;
+
+                        return filesList;
                     }
                 }
+            }
+            // 530 means not logged in
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
+            }
+            catch (Exception e)
+            {
+                throw new WebException("Fail when connecting to the ftp server.", e);
+            }
+            finally
+            {
+                request.Abort();
+            }
+        }
+
+        /// <inheritdoc />
+        /// <param name="filePath">The file path to be moved.</param>
+        /// <param name="pathToMove">The path for the file to be moved to.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="filePath"/> or <paramref name="pathToMove"/> are null.</exception>
+        /// <exception cref="FileNotFoundException">File in <paramref name="filePath"/> not found.</exception>
+        /// <exception cref="DuplicateNameException"><paramref name="pathToMove"/> destination path already exists.</exception>
+        /// <exception cref="UnauthorizedAccessException">Invalid credentials.</exception>
+        public async Task MoveFileAsync(string filePath, string pathToMove)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentNullException(paramName: nameof(filePath), message: "File path must not be null.");
+            if (string.IsNullOrWhiteSpace(pathToMove))
+                throw new ArgumentNullException(paramName: nameof(pathToMove), message: "Path to move must not be null.");
+
+            var location = new Uri(Path.Join(_settings.Url, filePath));
+            var destination = new Uri(Path.Join(_settings.Url, pathToMove));
+
+            if (!await PathExistsAsync(filePath))
+                throw new FileNotFoundException(message: "File not found.", fileName: filePath);
+            if (await PathExistsAsync(pathToMove))
+                throw new DuplicateNameException("Destination already exists.");
+
+            var targetUriRelative = location.MakeRelativeUri(destination);
+
+            var request = (FtpWebRequest)WebRequest.Create(location);
+
+            try
+            {
+                request.Method = WebRequestMethods.Ftp.Rename;
+
+                if (_settings.IsCredentialsAvailable)
+                    request.Credentials = _credentials;
+                request.RenameTo = Uri.UnescapeDataString(targetUriRelative.OriginalString);
+                using (var response = (FtpWebResponse)await request.GetResponseAsync())
+                    return;
+            }
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
             }
             catch (Exception e)
             {
@@ -94,16 +303,18 @@ namespace Namespace
         }
 
         /// <summary>
-        /// Download a file from a <see cref="FTPSettings.Url"/> location.
+        /// Download a file from a <see cref="FtpSettings.Url"/> location.
         /// </summary>
         /// <remarks>
-        /// <para><paramref name="fileLocation"/> use as a relative path location to <see cref="FTPSettings.Url"/>.</para>
-        /// <para><paramref name="fileLocation"/> can also be specified in <see cref="FTPSettings.Url"/>.</para>
+        /// <para><paramref name="fileLocation"/> use as a relative path location to <see cref="FtpSettings.Url"/>.</para>
+        /// <para><paramref name="fileLocation"/> can also be specified in <see cref="FtpSettings.Url"/>.</para>
         /// </remarks>
+        /// <param name="fileResult">Stream to return the file.</param>
         /// <param name="fileLocation">Optional: relative path file location.</param>
         /// <returns>The file as a <see cref="Stream"/>.</returns>
         /// <exception cref="WebException">Fail when connecting to the ftp server.</exception>
-        public async Task<Stream> DownloadFileAsync(string fileLocation = "")
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
+        public async Task DownloadFileAsync(Stream fileResult, string fileLocation)
         {
             var uri = new Uri(_settings.Url);
             if (!string.IsNullOrWhiteSpace(fileLocation))
@@ -116,8 +327,17 @@ namespace Namespace
                 if (_settings.IsCredentialsAvailable)
                     request.Credentials = _credentials;
 
-                var response = (FtpWebResponse)await request.GetResponseAsync();
-                return response.GetResponseStream();
+                using (var response = (FtpWebResponse)await request.GetResponseAsync())
+                using (var respStream = response.GetResponseStream())
+                {
+                    respStream.CopyTo(fileResult);
+                }
+            }
+            // 530 means not logged in
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
             }
             catch (Exception e)
             {
@@ -126,43 +346,44 @@ namespace Namespace
         }
 
         /// <summary>
-        /// Upload a file into the requested <see cref="FTPSettings.Url"/>
+        /// Upload a file into the requested <see cref="FtpSettings.Url"/>
         /// </summary>
         /// <param name="file">A file as a <see cref="Stream"/>.</param>
         /// <param name="fileName">The file name.</param>
-        /// <param name="relativeUploadPath">Upload location relative to <see cref="FTPSettings.Url"/>.</param>
+        /// <param name="relativeUploadPath">Upload location relative to <see cref="FtpSettings.Url"/>.</param>
         /// <returns>true if the file was uploaded, otherwise false.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="file"/> is null.</exception>
-        /// <exception cref="WebException">Fail when communicating to the ftp server.</exception>
-        public async Task<bool> UploadFileAsync(
-            Stream file,
-            string fileName,
+        /// <exception cref="WebException">Fail when connecting to the ftp server.</exception>
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
+        public async Task UploadFileAsync(
+            Stream file, string fileName,
             string relativeUploadPath)
         {
             if (file?.Length == 0)
                 throw new ArgumentNullException(paramName: nameof(file), message: "File must not be null.");
+
             var uri = new Uri(_settings.Url);
             Uri uploadLocationUri = null;
 
             if (!string.IsNullOrWhiteSpace(relativeUploadPath))
             {
-                uri = new Uri(uri, relativeUploadPath);
-                uploadLocationUri = uri;
+                uploadLocationUri = new Uri(uri, relativeUploadPath);
+
+                if (!string.IsNullOrWhiteSpace(fileName))
+                    uri = new Uri(uri, Path.Join(relativeUploadPath, fileName));
+                else
+                    uri = uploadLocationUri;
             }
-            if (!string.IsNullOrWhiteSpace(fileName))
+            else if (!string.IsNullOrWhiteSpace(fileName))
             {
-                uri = new Uri(uri, Path.Join(relativeUploadPath, fileName));
+                uri = new Uri(uri, fileName);
             }
 
-            try
+            if (uploadLocationUri != null
+                && !await PathExistsAsync(uploadLocationUri.AbsolutePath))
             {
-                if (uploadLocationUri != null
-                    && !await DirectoryExistsAsync(uploadLocationUri))
-                {
-                    await CreateDirectoryAsync(relativeUploadPath);
-                }
+                await CreateDirectoryAsync(relativeUploadPath);
             }
-            catch { throw; }
 
             var uploadRequest = (FtpWebRequest)WebRequest.Create(uri);
 
@@ -178,13 +399,18 @@ namespace Namespace
                     file.CopyTo(requestStream);
                 }
 
-                var response = await uploadRequest.GetResponseAsync() as FtpWebResponse;
-
-                return true;
+                using (var response = await uploadRequest.GetResponseAsync() as FtpWebResponse)
+                    return;
+            }
+            // 530 means not logged in
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
             }
             catch (Exception e)
             {
-                throw new WebException("Fail when connecting to the ftp server.", e);
+                throw new WebException("Fail when connecting to the ftp server..", e);
             }
             finally
             {
@@ -193,16 +419,17 @@ namespace Namespace
         }
 
         /// <summary>
-        /// Creates a directory into the <see cref="FTPSettings.Url"/> using specified <paramref name="relativePath"/>.
+        /// Creates a directory into the <see cref="FtpSettings.Url"/> using specified <paramref name="relativePath"/>.
         /// </summary>
-        /// <param name="relativePath">Relative pah to <see cref="FTPSettings.Url"/></param>
+        /// <param name="relativePath">Relative pah to <see cref="FtpSettings.Url"/></param>
         /// <returns>true if directory created, otherwise false</returns>
         /// <exception cref="ArgumentNullException"><paramref name="relativePath"/> is null.</exception>
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
         /// <exception cref="WebException">Fail when connecting to the ftp server.</exception>
-        public async Task<bool> CreateDirectoryAsync(string relativePath)
+        public async Task CreateDirectoryAsync(string relativePath)
         {
             if (string.IsNullOrWhiteSpace(relativePath))
-                throw new ArgumentNullException(paramName: nameof(relativePath), message: "Caminho relativo não pode ser nulo.");
+                throw new ArgumentNullException(paramName: nameof(relativePath), message: "Relative path must not be null.");
 
             var uri = new Uri(_settings.Url);
 
@@ -215,6 +442,9 @@ namespace Namespace
                 for (int i = 0; i < paths.Count; i++)
                 {
                     lastPath += paths[i] + "/";
+                    if (await PathExistsAsync(Path.Join(uri.AbsolutePath, lastPath)))
+                        continue;
+
                     var request = (FtpWebRequest)WebRequest.Create(new Uri(uri, lastPath));
                     request.Method = WebRequestMethods.Ftp.MakeDirectory;
 
@@ -222,69 +452,104 @@ namespace Namespace
                         request.Credentials = _credentials;
 
                     using (var response = await request.GetResponseAsync() as FtpWebResponse)
-                    {
-                        using (var responseStream = response.GetResponseStream()) { }
-                    }
-
-                    request.Abort();
+                    using (var responseStream = response.GetResponseStream())
+                        request.Abort();
                 }
-                return true;
             }
+            // 530 means not logged in
             catch (WebException e)
+            when (e.Message.Contains("530"))
             {
-                throw;
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
             }
-            catch
+            catch (Exception e)
             {
-                return false;
+                throw new WebException("Fail when connecting to the ftp server.", e);
             }
         }
 
         /// <summary>
-        /// Check if the specified <paramref name="url"/> exists.
+        /// Check if the specified <paramref name="path"/> exists.
         /// </summary>
-        /// <param name="url">Url to the FTP.</param>
+        /// <param name="path">Relative path to the ftp url.</param>
         /// <returns>true if exists, otherwise false</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="path"/> is null.</exception>
         /// <exception cref="TimeoutException">Connection timed out.</exception>
-        /// <exception cref="ArgumentNullException"><paramref name="url"/> is null.</exception>
-        public async Task<bool> DirectoryExistsAsync(string url)
+        /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
+        public async Task<bool> PathExistsAsync(string path)
         {
-            if (string.IsNullOrWhiteSpace(url))
-                throw new ArgumentNullException(paramName: nameof(url), message: $"{nameof(url)} não pode ser nula.");
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(paramName: nameof(path), message: "Path must not be null.");
 
-            return await DirectoryExistsAsync(new Uri(url));
-        }
-
-        /// <summary>
-        /// Check if the specified <paramref name="uri"/> exists.
-        /// </summary>
-        /// <param name="uri">Uri to the FTP.</param>
-        /// <returns>true if exists, otherwise false</returns>
-        /// <exception cref="TimeoutException">Connection timed out.</exception>
-        /// <exception cref="ArgumentNullException"><paramref name="uri"/> is null.</exception>
-        public async Task<bool> DirectoryExistsAsync(Uri uri)
-        {
-            if (uri == null)
-                throw new ArgumentNullException(paramName: nameof(uri), message: $"{nameof(uri)} não pode ser nula.");
-
+            var uri = new Uri(Path.Join(_settings.Url, path));
             var request = (FtpWebRequest)WebRequest.Create(uri);
 
             try
             {
                 if (_settings.IsCredentialsAvailable)
                     request.Credentials = _credentials;
-                request.Method = WebRequestMethods.Ftp.ListDirectory;
-                var response = await request.GetResponseAsync() as FtpWebResponse;
 
-                return response != null;
+                var fileExt = Path.GetExtension(uri.AbsoluteUri.Split('/').Last());
+                bool isDirectory = string.IsNullOrWhiteSpace(fileExt);
+
+                request.Method = isDirectory ?
+                    WebRequestMethods.Ftp.ListDirectory
+                    : WebRequestMethods.Ftp.GetFileSize;
+
+                using (var response = await request.GetResponseAsync() as FtpWebResponse)
+                    return true;
             }
             catch (TimeoutException)
             {
                 throw;
             }
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
+            }
             catch
             {
                 return false;
+            }
+            finally
+            {
+                request.Abort();
+            }
+        }
+
+        /// <inheritdoc />
+        /// <exception cref="ArgumentNullException">File name is null.</exception>
+        /// <exception cref="TimeoutException">Connection timed out.</exception>
+        /// <exception cref="UnauthorizedAccessException">Invalid credentials.</exception>
+        public async Task DeleteFileAsync(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentNullException(paramName: nameof(fileName), message: "File name must not be null.");
+            var uri = new Uri(Path.Join(_settings.Url, fileName));
+
+            var request = (FtpWebRequest)WebRequest.Create(uri);
+            if (_settings.IsCredentialsAvailable)
+                request.Credentials = _credentials;
+
+            try
+            {
+                request.Method = WebRequestMethods.Ftp.DeleteFile;
+                using (var response = await request.GetResponseAsync() as FtpWebResponse)
+                    return;
+            }
+            catch (WebException e)
+            when (e.Message.Contains("530"))
+            {
+                throw new UnauthorizedAccessException("Unauthorized: invalid credentials.");
+            }
+            catch (TimeoutException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new WebException("Fail when connecting to the ftp server.", e);
             }
             finally
             {
