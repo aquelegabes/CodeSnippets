@@ -1,6 +1,6 @@
 #region
 // Requires package:
-// <PackageReference Include="Azure.Storage.Blobs" Version="12.6.0" />
+// <PackageReference Include="Azure.Storage.Blobs" />
 #endregion
 
 using System;
