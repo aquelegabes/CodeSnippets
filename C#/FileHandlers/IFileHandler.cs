@@ -75,6 +75,6 @@ namespace Namespace
         /// Asynchronously check if a connection can be made;
         /// </summary>
         /// <returns>true if can connect, otherwise false</returns>
-        Task<bool> CanConnect();
+        Task<object> CanConnect(string relativePath);
     }
 }
