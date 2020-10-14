@@ -5,6 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Namespace
 {
+    public enum FileHandlerType : int
+    {
+        FTP = 1,
+        GoogleDrive = 2,
+        OneDrive = 3,
+        SFTP = 4,
+    }
     /// <summary>
     /// Abstract class to generate a <see cref="IFileHandler"/> accordingly.
     /// </summary>
