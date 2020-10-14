@@ -5,31 +5,31 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using IoTDeviceManager.API.ExternalServices.Factory;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace Namespace
 {
     /// <summary>
-    /// Structured FTP settings information.
-    /// </summary>
-    /// <summary>
-    /// Structured FTP settings information.
+    /// Structured Ftp settings information.
     /// </summary>
     public class FtpSettings
     {
+        public string Host => string.Join(':', this.Url, this.Port);
         public string Url { get; set; }
         public string User { get; set; }
         public string Password { get; set; }
+        public virtual int Port { get; set; } = 21;
 
         /// <summary>
-        /// Checks if <see cref="Url"/> and <see cref="Password"/> are available.
+        /// Checks if <see cref="User"/> and <see cref="Password"/> are available.
         /// </summary>
         /// <returns>true if available, otherwise false</returns>
         public bool IsCredentialsAvailable => !string.IsNullOrWhiteSpace(User) && !string.IsNullOrWhiteSpace(Password);
     }
 
     /// <summary>
-    /// Class responsible for handling FTP methods.
+    /// Class responsible for handling Ftp methods.
     /// </summary>
     public class FtpHandler : IFileHandler
     {
@@ -37,22 +37,62 @@ namespace Namespace
         private NetworkCredential _credentials;
 
         /// <inheritdoc />
-        public async Task<bool> CanConnect()
+        public async Task<object> CanConnect(string relativePath)
         {
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(new Uri(_settings.Host), relativePath);
             var request = (FtpWebRequest)WebRequest.Create(uri);
             request.KeepAlive = false;
-            request.Method = WebRequestMethods.Ftp.PrintWorkingDirectory;
+            request.Method = WebRequestMethods.Ftp.ListDirectory;
 
             if (_settings.IsCredentialsAvailable)
                 request.Credentials = _credentials;
 
             try
             {
-                using (var response = await request.GetResponseAsync())
-                    return true;
+                using (var response = (FtpWebResponse)await request.GetResponseAsync())
+                {
+                    var result = new Dictionary<string, object>
+                    {
+                        ["connectionExists"] = true,
+                    };
+
+                    if (uri.AbsolutePath == "/")
+                    {
+                        result["folderExists"] = true;
+                        return result;
+                    }
+
+                    //* there are various kinds of ftp server with different return messages for 
+                    //* existing and nonexistent folders
+                    if (response.StatusDescription.Contains("complete", StringComparison.OrdinalIgnoreCase))
+                        result["folderExists"] = true;
+                    else if (response.StatusDescription.Contains("0 matches", StringComparison.OrdinalIgnoreCase))
+                        result["folderExists"] = false;
+                    else if (response.StatusDescription.Contains("matches", StringComparison.OrdinalIgnoreCase))
+                        result["folderExists"] = true;
+
+                    return result;
+                }
             }
-            catch { return false; }
+            catch (Exception e)
+            {
+                if (e.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Dictionary<string, object>
+                    {
+                        ["connectionExists"] = true,
+                        ["folderExists"] = false
+                    };
+                }
+                else
+                {
+                    return new Dictionary<string, object>
+                    {
+                        ["connectionExists"] = false,
+                        ["folderExists"] = false
+                    };
+                }
+            }
             finally { request.Abort(); }
         }
 
@@ -91,7 +131,7 @@ namespace Namespace
             if (!await PathExistsAsync(fileName))
                 throw new FileNotFoundException("File not found.");
 
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(_settings.Host);
 
             if (string.IsNullOrWhiteSpace(relativePath))
                 uri = new Uri(uri, Path.Join(relativePath, fileName));
@@ -180,7 +220,7 @@ namespace Namespace
         string relativeDirectory = "",
         int pageSize = 100, object pageObject = default)
         {
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(_settings.Host);
             if (!string.IsNullOrWhiteSpace(relativeDirectory))
                 uri = new Uri(uri, relativeDirectory);
 
@@ -199,17 +239,23 @@ namespace Namespace
                         var filesList = new ListFileInfoResult();
                         while (reader?.EndOfStream == false)
                         {
-                            var filesInfo = new FileInfoResult
-                            {
-                                Additional = reader.ReadLine(),
-                            };
-                            var name = ((string)filesInfo.Additional).Split(" ").Last();
+                            var line = reader.ReadLine();
+                            var name = line.Split(" ").Last();
                             if (name == "." || name == "..")
                                 continue;
-                            filesInfo.Name = name;
+
+                            string contentType = "application/octet-stream";
+                            new FileExtensionContentTypeProvider().TryGetContentType(name, out contentType);
+
+                            var filesInfo = new FileInfoResult
+                            {
+                                Additional = line,
+                                Name = name,
+                                MimeType = contentType
+                            };
+
                             filesList.Files.Add(filesInfo);
                         }
-
                         return filesList;
                     }
                 }
@@ -244,8 +290,8 @@ namespace Namespace
             if (string.IsNullOrWhiteSpace(pathToMove))
                 throw new ArgumentNullException(paramName: nameof(pathToMove), message: "Path to move must not be null.");
 
-            var location = new Uri(Path.Join(_settings.Url, filePath));
-            var destination = new Uri(Path.Join(_settings.Url, pathToMove));
+            var location = new Uri(new Uri(_settings.Host), filePath);
+            var destination = new Uri(new Uri(_settings.Host), pathToMove);
 
             if (!await PathExistsAsync(filePath))
                 throw new FileNotFoundException(message: "File not found.", fileName: filePath);
@@ -295,7 +341,7 @@ namespace Namespace
         /// <exception cref="UnauthorizedAccessException">Unauthorized: invalid credentials.</exception>
         public async Task DownloadFileAsync(Stream fileResult, string fileLocation)
         {
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(_settings.Host);
             if (!string.IsNullOrWhiteSpace(fileLocation))
                 uri = new Uri(uri, fileLocation);
 
@@ -341,7 +387,7 @@ namespace Namespace
             if (file?.Length == 0)
                 throw new ArgumentNullException(paramName: nameof(file), message: "File must not be null.");
 
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(_settings.Host);
             Uri uploadLocationUri = null;
 
             if (!string.IsNullOrWhiteSpace(relativeUploadPath))
@@ -410,7 +456,7 @@ namespace Namespace
             if (string.IsNullOrWhiteSpace(relativePath))
                 throw new ArgumentNullException(paramName: nameof(relativePath), message: "Relative path must not be null.");
 
-            var uri = new Uri(_settings.Url);
+            var uri = new Uri(_settings.Host);
 
             var paths = relativePath.Split('/').ToList();
             paths.RemoveAll(string.IsNullOrWhiteSpace);
@@ -460,7 +506,7 @@ namespace Namespace
             if (string.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(paramName: nameof(path), message: "Path must not be null.");
 
-            var uri = new Uri(Path.Join(_settings.Url, path));
+            var uri = new Uri(new Uri(_settings.Host), path);
             var request = (FtpWebRequest)WebRequest.Create(uri);
 
             try
@@ -505,7 +551,7 @@ namespace Namespace
         {
             if (string.IsNullOrWhiteSpace(fileName))
                 throw new ArgumentNullException(paramName: nameof(fileName), message: "File name must not be null.");
-            var uri = new Uri(Path.Join(_settings.Url, fileName));
+            var uri = new Uri(new Uri(_settings.Host), fileName);
 
             var request = (FtpWebRequest)WebRequest.Create(uri);
             if (_settings.IsCredentialsAvailable)
