@@ -16,9 +16,15 @@ using Google.Apis.Drive.v3;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
 using Microsoft.AspNetCore.StaticFiles;
+using Naylah.Extensions;
 
 namespace Namespace
 {
+    public sealed class GoogleSettings
+    {
+        public string ConnectionToken { get; set; }
+        public ClientSecrets Secrets { get; set; }
+    }
     public sealed class GoogleDriveHandler : IFileHandler, IDisposable
     {
         /// <summary>
@@ -28,13 +34,13 @@ namespace Namespace
         /// <summary>
         /// Application name.
         /// </summary>
-        private const string ApplicationName = "{ApplicationName}";
+        private const string ApplicationName = "IOTDEVICEMANAGER";
         private UserCredential Credentials { get; set; }
         private DriveService Service { get; set; }
 
         /// <inheritdoc />
         [Obsolete("This method is not used in GoogleDriveHandler.", true)]
-        public Task<bool> CanConnect()
+        public Task<object> CanConnect(string relativePath)
         {
             throw new NotImplementedException("Google drive handler does not require this method.");
         }
@@ -291,22 +297,20 @@ namespace Namespace
         /// <exception cref="UnauthorizedAccessException">Could not refresh user credentials.</exception>
         public void LoadSettings<T>(T settings)
         {
-            if (!(settings is Dictionary<string, object>))
+            if (!(settings is GoogleSettings gSettings))
                 throw new InvalidCastException(message: "Settings is of invalid type.");
-
-            var settingsd = settings as Dictionary<string, object>;
 
             IAuthorizationCodeFlow flow =
             new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
             {
-                ClientSecrets = settingsd["secrets"] as ClientSecrets,
+                ClientSecrets = gSettings.Secrets,
                 Scopes = new[] { DriveService.Scope.Drive },
                 DataStore = new FileDataStore("Drive.Api.Auth.Store"),
             });
 
             var token = new TokenResponse
             {
-                RefreshToken = (string)settingsd["token"]
+                RefreshToken = gSettings.ConnectionToken
             };
 
             Credentials = new UserCredential(flow, Guid.NewGuid().ToString(), token);
